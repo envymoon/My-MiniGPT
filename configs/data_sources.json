@@ -55,7 +55,7 @@
       "split": "train",
       "text_field": "text",
       "group_field": "url",
-      "shuffle_buffer": 5000,
+      "shuffle_buffer": 256,
       "max_tokens": 600000000,
       "license": "Apache-2.0 compilation; underlying pre-1919 Gutenberg works",
       "provenance": "https://huggingface.co/datasets/emozilla/pg19"
@@ -100,10 +100,11 @@
     },
     {
       "name": "modern_simplified_chinese_longform",
+      "enabled": false,
       "hf_dataset": "Geralt-Targaryen/Literature-zh",
       "split": "train",
       "text_field": "text",
-      "shuffle_buffer": 10000,
+      "shuffle_buffer": 256,
       "max_tokens": 150000000,
       "license": "Apache-2.0 dataset compilation; underlying Common Crawl documents retain their original rights and terms",
       "provenance": "https://huggingface.co/datasets/Geralt-Targaryen/Literature-zh",
@@ -116,7 +117,7 @@
       "split": "train",
       "text_field": "content",
       "group_field": "source",
-      "shuffle_buffer": 5000,
+      "shuffle_buffer": 256,
       "max_tokens": 50000000,
       "license": "CC0-1.0",
       "provenance": "https://huggingface.co/datasets/gujilab/chinese-classical-corpus"

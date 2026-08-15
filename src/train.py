@@ -6,6 +6,7 @@ import argparse
 import json
 import math
 import random
+import signal
 import time
 from contextlib import nullcontext
 from dataclasses import asdict
@@ -20,6 +21,17 @@ from config import ModelConfig, TrainConfig, load_config
 from dataset import get_dataloaders
 from model import GPT
 from quantization import set_qat_enabled
+
+
+_STOP_REQUESTED = False
+
+
+def request_graceful_stop(_signum: int, _frame: object) -> None:
+    """Finish the current optimizer step, then write a resumable checkpoint."""
+
+    global _STOP_REQUESTED
+    _STOP_REQUESTED = True
+    print("stop requested; finishing the current optimizer step before checkpointing")
 
 
 def parse_args() -> argparse.Namespace:
@@ -152,6 +164,11 @@ def save_checkpoint(
 
 
 def main() -> None:
+    global _STOP_REQUESTED
+    _STOP_REQUESTED = False
+    signal.signal(signal.SIGINT, request_graceful_stop)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, request_graceful_stop)
     arguments = parse_args()
     model_config = load_config(ModelConfig, arguments.model_config)
     train_config = load_config(TrainConfig, arguments.train_config)
@@ -159,6 +176,13 @@ def main() -> None:
         raise ValueError("train sequence_length cannot exceed model max_seq_len")
     seed_everything(train_config.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if device.type == "cuda":
+        # Keep GEMM selection explicit in this low-level implementation. This
+        # enables TF32 tensor-core math for FP32 utility paths without changing
+        # the requested AMP dtype or model parameter storage.
+        torch.set_float32_matmul_precision("high")
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
     precision = resolve_precision(train_config.precision, device)
     if device.type == "cpu" and precision == "fp16":
         raise ValueError("fp16 training is not supported on CPU; use fp32 or bf16")
@@ -212,8 +236,17 @@ def main() -> None:
     )
     print(
         f"device={device} precision={precision} parameters={model.parameter_count():,} "
-        f"context={train_config.sequence_length} tokens/step={tokens_per_step:,}"
+        f"attention={model_config.attention_backend} context={train_config.sequence_length} "
+        f"batch={train_config.batch_size} accumulation={train_config.gradient_accumulation_steps} "
+        f"tokens/step={tokens_per_step:,} workers={train_config.num_workers} "
+        f"cuda_graphs={train_config.cuda_graphs}"
     )
+    if train_config.cuda_graphs == "auto":
+        print(
+            "cuda_graphs=auto: eager training fallback is active because the "
+            "loop uses gradient accumulation and activation checkpointing; "
+            "fixed-shape inference capture is available in src/cuda_graph.py"
+        )
     model.train()
     train_iterator = iter(train_loader)
     optimizer.zero_grad(set_to_none=True)
@@ -225,8 +258,11 @@ def main() -> None:
         completed_steps = step + 1
         qat_active = model_config.qat and completed_steps >= train_config.qat_start_step
         set_qat_enabled(model, qat_active)
-        accumulated_language_loss = 0.0
-        accumulated_auxiliary_loss = 0.0
+        # Keep these reductions on-device. Calling .item() for every
+        # micro-batch forces a CUDA synchronization 64 times per optimizer
+        # step in the previous configuration.
+        accumulated_language_loss = torch.zeros((), device=device, dtype=torch.float32)
+        accumulated_auxiliary_loss = torch.zeros((), device=device, dtype=torch.float32)
 
         for _ in range(train_config.gradient_accumulation_steps):
             try:
@@ -243,8 +279,8 @@ def main() -> None:
                 loss = language_loss + model_config.moe_aux_loss_weight * output.auxiliary_loss
                 scaled_loss = loss / train_config.gradient_accumulation_steps
             scaler.scale(scaled_loss).backward()
-            accumulated_language_loss += language_loss.detach().item()
-            accumulated_auxiliary_loss += output.auxiliary_loss.detach().item()
+            accumulated_language_loss += language_loss.detach().float()
+            accumulated_auxiliary_loss += output.auxiliary_loss.detach().float()
 
         scaler.unscale_(optimizer)
         gradient_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), train_config.grad_clip)
@@ -262,10 +298,10 @@ def main() -> None:
             last_logged_step = step
             language_loss_value = (
                 accumulated_language_loss / train_config.gradient_accumulation_steps
-            )
+            ).item()
             auxiliary_loss_value = (
                 accumulated_auxiliary_loss / train_config.gradient_accumulation_steps
-            )
+            ).item()
             metric = {
                 "step": completed_steps,
                 "train_loss": language_loss_value,
@@ -325,6 +361,9 @@ def main() -> None:
                     model_config,
                     train_config,
                 )
+
+        if _STOP_REQUESTED:
+            break
 
     if last_completed_step >= start_step:
         save_checkpoint(

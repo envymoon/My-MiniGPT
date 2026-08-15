@@ -84,6 +84,7 @@ def _linear(config: ModelConfig, in_dim: int, out_dim: int) -> nn.Linear:
 class GroupedQueryAttention(nn.Module):
     def __init__(self, config: ModelConfig) -> None:
         super().__init__()
+        self.config = config
         self.n_heads = config.n_heads
         self.n_kv_heads = config.n_kv_heads
         self.head_dim = config.dim // config.n_heads
@@ -116,12 +117,28 @@ class GroupedQueryAttention(nn.Module):
         k = repeat_kv(k, self.kv_repeats)
         v = repeat_kv(v, self.kv_repeats)
 
-        # Kept explicit for study: [B,H,T,D] @ [B,H,D,T] -> [B,H,T,T].
-        scores = torch.matmul(q, k.transpose(-2, -1)) * self.scale
-        scores = scores.masked_fill(causal_mask, torch.finfo(scores.dtype).min)
-        probabilities = F.softmax(scores.float(), dim=-1).to(dtype=q.dtype)
-        probabilities = self.attention_dropout(probabilities)
-        context = torch.matmul(probabilities, v)
+        backend = self.config.attention_backend
+        if backend == "auto":
+            backend = "sdpa" if q.is_cuda else "explicit"
+        if backend == "sdpa":
+            # PyTorch dispatches to flash/memory-efficient SDPA on CUDA when
+            # available. The operation has a native backward, unlike the
+            # inference-only paged KV-cache kernel in miniVLLM.
+            context = F.scaled_dot_product_attention(
+                q,
+                k,
+                v,
+                attn_mask=~causal_mask,
+                dropout_p=self.attention_dropout.p if self.training else 0.0,
+                is_causal=False,
+            )
+        else:
+            # Kept explicit for study: [B,H,T,D] @ [B,H,D,T] -> [B,H,T,T].
+            scores = torch.matmul(q, k.transpose(-2, -1)) * self.scale
+            scores = scores.masked_fill(causal_mask, torch.finfo(scores.dtype).min)
+            probabilities = F.softmax(scores.float(), dim=-1).to(dtype=q.dtype)
+            probabilities = self.attention_dropout(probabilities)
+            context = torch.matmul(probabilities, v)
         context = context.transpose(1, 2).contiguous().view(batch, time, -1)
         return self.residual_dropout(self.out_proj(context))
 

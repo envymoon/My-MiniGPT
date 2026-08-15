@@ -222,30 +222,46 @@ def iter_hf_documents(source: dict[str, Any], seed: int) -> Iterator[Document]:
     # Imported lazily so purely local preparation does not require datasets.
     from datasets import load_dataset
 
-    dataset = load_dataset(
-        source["hf_dataset"],
-        name=source.get("hf_config"),
-        split=source.get("split", "train"),
-        streaming=True,
-    )
-    shuffle_buffer = int(source.get("shuffle_buffer", 10_000))
-    if shuffle_buffer > 0:
-        dataset = dataset.shuffle(seed=seed, buffer_size=shuffle_buffer)
-    max_documents = source.get("max_documents")
-    accepted_documents = 0
-    for record in dataset:
-        if not record_matches_filters(record, source):
-            continue
-        if max_documents is not None and accepted_documents >= int(max_documents):
-            break
-        text = nested_value(record, source.get("text_field", "text"))
-        group_id = nested_value(record, source.get("group_field"))
-        if isinstance(text, str):
-            accepted_documents += 1
-            yield Document(source["name"], text, None if group_id is None else str(group_id))
+    # Some large Hub datasets contain an occasional Parquet shard whose schema
+    # differs from the dataset-level metadata.  `datasets` raises a CastError
+    # lazily while iterating that shard, which used to abort tokenizer training
+    # and leave the whole corpus unusable.  A remote source is optional by
+    # design, so isolate its failure and continue with the remaining sources.
+    try:
+        dataset = load_dataset(
+            source["hf_dataset"],
+            name=source.get("hf_config"),
+            split=source.get("split", "train"),
+            streaming=True,
+        )
+        shuffle_buffer = int(source.get("shuffle_buffer", 10_000))
+        if shuffle_buffer > 0:
+            dataset = dataset.shuffle(seed=seed, buffer_size=shuffle_buffer)
+        max_documents = source.get("max_documents")
+        accepted_documents = 0
+        for record in dataset:
+            if not record_matches_filters(record, source):
+                continue
+            if max_documents is not None and accepted_documents >= int(max_documents):
+                break
+            text = nested_value(record, source.get("text_field", "text"))
+            group_id = nested_value(record, source.get("group_field"))
+            if isinstance(text, str):
+                accepted_documents += 1
+                yield Document(
+                    source["name"], text, None if group_id is None else str(group_id)
+                )
+    except Exception as error:
+        print(
+            f"warning: skip HF source={source['name']!r} after remote/schema error: "
+            f"{type(error).__name__}: {error}"
+        )
 
 
 def iter_source_documents(source: dict[str, Any], seed: int) -> Iterator[Document]:
+    if source.get("enabled", True) is False:
+        print(f"skipping disabled source={source.get('name')!r}")
+        return
     if "hf_dataset" in source:
         yield from iter_hf_documents(source, seed)
     elif "path" in source:

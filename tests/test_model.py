@@ -38,6 +38,20 @@ def test_gqa_forward_and_backward():
     assert model.blocks[0].attention.q_proj.weight.grad is not None
 
 
+def test_sdpa_backend_preserves_causal_forward_and_autograd():
+    explicit = GPT(tiny_config(attention_backend="explicit")).eval()
+    fused = GPT(tiny_config(attention_backend="sdpa")).eval()
+    fused.load_state_dict(explicit.state_dict())
+    tokens = torch.randint(0, 101, (2, 12))
+    with torch.no_grad():
+        expected = explicit(tokens).logits
+        actual = fused(tokens).logits
+    torch.testing.assert_close(actual, expected, rtol=2e-4, atol=2e-4)
+    fused.train()
+    fused(tokens).logits.mean().backward()
+    assert fused.blocks[0].attention.q_proj.weight.grad is not None
+
+
 def test_causal_mask_prevents_future_information():
     model = GPT(tiny_config()).eval()
     first = torch.randint(0, 101, (1, 10))

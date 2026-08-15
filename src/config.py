@@ -12,16 +12,19 @@ from typing import Any, TypeVar
 class ModelConfig:
     vocab_size: int = 50_304
     max_seq_len: int = 1_024
-    dim: int = 768
-    n_layers: int = 13
-    n_heads: int = 12
+    dim: int = 1024
+    n_layers: int = 18
+    n_heads: int = 16
     n_kv_heads: int = 4
-    ffn_hidden_dim: int | None = 2_208
-    ffn_multiple_of: int = 32
+    ffn_hidden_dim: int | None = 2_816
+    ffn_multiple_of: int = 256
     rope_theta: float = 10_000.0
     norm_eps: float = 1e-5
     dropout: float = 0.0
     qk_norm: bool = True
+    # auto selects PyTorch's fused SDPA on CUDA and the explicit reference path
+    # on CPU. Set explicit when studying the score/mask/softmax mechanics.
+    attention_backend: str = "auto"  # explicit | sdpa | auto
     gradient_checkpointing: bool = True
 
     # Optional, educational sparse feed-forward path.
@@ -44,6 +47,8 @@ class ModelConfig:
             raise ValueError("n_heads must be divisible by n_kv_heads")
         if (self.dim // self.n_heads) % 2 != 0:
             raise ValueError("head_dim must be even for RoPE")
+        if self.attention_backend not in {"explicit", "sdpa", "auto"}:
+            raise ValueError("attention_backend must be explicit, sdpa, or auto")
         if self.moe_num_experts and not 1 <= self.moe_top_k <= self.moe_num_experts:
             raise ValueError("moe_top_k must be in [1, moe_num_experts]")
         if self.moe_every_n_layers < 1:
@@ -56,11 +61,11 @@ class ModelConfig:
 class TrainConfig:
     train_tokens: str = "data/processed/train.bin"
     val_tokens: str = "data/processed/val.bin"
-    output_dir: str = "runs/minigpt-125m"
+    output_dir: str = "runs/minigpt-255m"
     tokenizer_name: str = "tokenizers/minigpt-bilingual-50304"
     sequence_length: int = 512
-    batch_size: int = 1
-    gradient_accumulation_steps: int = 64
+    batch_size: int = 2
+    gradient_accumulation_steps: int = 32
     total_steps: int = 20_000
     warmup_steps: int = 500
     learning_rate: float = 3e-4
@@ -70,7 +75,7 @@ class TrainConfig:
     beta2: float = 0.95
     grad_clip: float = 1.0
     precision: str = "auto"  # auto | fp32 | fp16 | bf16
-    num_workers: int = 0
+    num_workers: int = 2
     seed: int = 42
     log_every: int = 1
     eval_every: int = 250
@@ -78,12 +83,21 @@ class TrainConfig:
     save_every: int = 50_000
     keep_checkpoint_history: bool = False
     qat_start_step: int = 15_000
+    # CUDA Graphs are enabled as a policy, but training falls back to eager
+    # autograd because this loop has accumulation, checkpointing, and streams.
+    cuda_graphs: str = "auto"  # auto | off
 
     def validate(self) -> None:
         if self.precision not in {"auto", "fp32", "fp16", "bf16"}:
             raise ValueError("precision must be auto, fp32, fp16, or bf16")
         if self.gradient_accumulation_steps < 1:
             raise ValueError("gradient_accumulation_steps must be positive")
+        if self.batch_size < 1:
+            raise ValueError("batch_size must be positive")
+        if self.num_workers < 0:
+            raise ValueError("num_workers cannot be negative")
+        if self.cuda_graphs not in {"auto", "off"}:
+            raise ValueError("cuda_graphs must be auto or off")
         if self.sequence_length < 2:
             raise ValueError("sequence_length must be at least 2")
         if self.total_steps < 1 or self.eval_batches < 1:
