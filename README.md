@@ -1,8 +1,28 @@
 # My-MiniGPT
 
+<p align="center">
+  <a href="https://huggingface.co/spaces/ianhaimo/GPT-A-Minimal-Interpretable-Implementation">
+    <img src="https://img.shields.io/badge/%F0%9F%A4%97%20Interactive%20Hugging%20Face%20Demo-TRY%20THE%20MODEL-2563eb?style=for-the-badge&logo=huggingface&logoColor=white" alt="Open the interactive Hugging Face demo" height="44">
+  </a>
+</p>
+
+<p align="center"><strong>Click the badge above to interact with the model in the live demo.</strong></p>
+
 A ground-up PyTorch implementation focusing on attention mechanics, masking, normalization design choices, bilingual data preparation, and memory-aware language-model training.
 
-[![App](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Demo-blue)](https://huggingface.co/spaces/ianhaimo/GPT-A-Minimal-Interpretable-Implementation)
+The current default is a **254,450,944-parameter (approximately 254.5M)** bilingual English-Simplified-Chinese model. Its primary training direction is **literary language ability in both English and Simplified Chinese**: long-form narrative, description, dialogue, style, and coherent continuation. Educational and general-knowledge data provide a foundation, while curated books and literary corpora remain central to the model's identity.
+
+## Primary Training Focus
+
+My-MiniGPT is designed first as a bilingual literary language model rather than an instruction-following assistant. Pretraining emphasizes:
+
+- English and Simplified-Chinese literary prose;
+- long-form narrative continuity, scene description, and dialogue;
+- exposure to both classic and modern literary styles;
+- balanced bilingual tokenization and data preparation;
+- transparent, ground-up PyTorch implementations that keep the model's behavior inspectable.
+
+The educational, mathematical, scientific, and general-text sources in the mixture support vocabulary and world knowledge, but the main qualitative target is literary generation in both languages.
 
 ## Project Motivation
 
@@ -10,7 +30,7 @@ Most Transformer tutorials rely heavily on high-level PyTorch modules, which obs
 
 This project rebuilds a decoder-only [Transformer](https://arxiv.org/abs/1706.03762) from the ground up to make its internal mechanics and trade-offs directly inspectable. The implementation deliberately keeps explicit Q/K/V projections, head reshaping, Rotary Position Embeddings (RoPE), causal masking, attention score computation, residual connections, normalization, feed-forward routing, and quantization simulation instead of hiding them behind `nn.MultiheadAttention` or a high-level training framework.
 
-The current default is a roughly 125M-parameter bilingual English-Simplified-Chinese model intended for serious pretraining experiments while remaining readable and debuggable on a single GPU.
+The current default is a roughly 254.5M-parameter bilingual English-Simplified-Chinese model intended for serious pretraining experiments while remaining readable and debuggable on a single GPU. The training configuration uses a two-sample micro-batch and 32-way accumulation, preserving the previous 32,768 effective tokens per optimizer step while reducing host-to-device starvation.
 
 ## Architecture Overview
 
@@ -51,14 +71,14 @@ n_kv_heads == 1 -> Multi-Query Attention (MQA)
 
 | Component | Default |
 |---|---:|
-| Parameters | 125,237,120 |
+| Parameters | 254,450,944 |
 | Vocabulary | 50,304 tokens |
-| Transformer blocks | 13 |
-| Model dimension | 768 |
-| Query heads | 12 |
+| Transformer blocks | 18 |
+| Model dimension | 1,024 |
+| Query heads | 16 |
 | Key/value heads | 4 |
 | Head dimension | 64 |
-| Feed-forward hidden dimension | 2,208 |
+| Feed-forward hidden dimension | 2,816 |
 | Maximum context length | 1,024 tokens |
 | Main training context | 512 tokens |
 | Normalization | Pre-RMSNorm plus QK-Norm |
@@ -80,7 +100,7 @@ The original LayerNorm comparison was useful for understanding centering and var
 
 ### 3.3 Grouped-Query Attention Reshaping
 
-The embedding dimension is explicitly reshaped into `(num_heads, head_dim)`. Twelve query heads are paired with four key/value heads, so each K/V head serves a group of three query heads. This retains multiple query subspaces while reducing K/V projection parameters and inference-time KV-cache size relative to full MHA.
+The embedding dimension is explicitly reshaped into `(num_heads, head_dim)`. Sixteen query heads are paired with four key/value heads, so each K/V head serves a group of four query heads. This retains multiple query subspaces while reducing K/V projection parameters and inference-time KV-cache size relative to full MHA.
 
 GQA does not remove the quadratic training cost of the full `QK^T` attention matrix. It primarily reduces K/V parameters, bandwidth, and cache size.
 
@@ -129,9 +149,21 @@ MXFP8 is not part of the default path. Native MXFP8 training is hardware- and ke
 
 QAT simulates quantization error during floating-point training. It does not by itself reduce training VRAM or accelerate inference; actual speedups require a compatible packed-integer inference kernel.
 
+### 3.9 Operator backends, autograd, and CUDA Graphs
+
+The attention implementation has three selectable backends:
+
+- `attention_backend: "auto"` (the default) selects SDPA on CUDA and the explicit reference path on CPU.
+- `attention_backend: "sdpa"` calls `torch.nn.functional.scaled_dot_product_attention`. On CUDA, PyTorch may select its fused flash or memory-efficient kernel. Its backward is registered with autograd, so Q/K/V projections and the rest of the model still train normally.
+- `attention_backend: "explicit"` always selects the score/mask/softmax reference path for debugging and teaching.
+
+The miniVLLM project in the sibling `New project/projects/miniVLLM` directory contains a useful native kernel, but it is an inference-only paged-KV-cache ABI: it writes a supplied output buffer and does not expose a backward operation. [`src/minivllm_bridge.py`](src/minivllm_bridge.py) can compile that extension on demand with `MINIVLLM_ROOT`; it is intentionally not wired into pretraining because doing so would silently break autograd. This keeps the training baseline honest while exposing the same low-level operator boundary for inference experiments.
+
+CUDA Graph policy is `auto` by default. For fixed-shape inference, [`src/cuda_graph.py`](src/cuda_graph.py) provides `CUDAGraphForward` and `capture_gpt_logits`. CUDA Graph replay requires fixed tensor addresses and shapes, so the training loop reports an eager fallback while it uses gradient accumulation and activation checkpointing; this avoids silently changing backward semantics. The training path uses native autograd and AMP instead.
+
 ## 4 Training Dynamics
 
-Below is the existing training-versus-validation loss figure from the original project. It is intentionally retained as a historical result and should be replaced after the new 125M GQA model completes training.
+Below is the existing training-versus-validation loss figure from the original project. It is intentionally retained as a historical result and should be replaced after the new 254.5M GQA model completes training.
 
 ![Training vs Validation Loss](assets/loss_comparison.png)
 
@@ -143,7 +175,7 @@ The current training loop prints one JSON record per optimizer step, including:
 - tokens per second and peak allocated VRAM;
 - whether QAT is active.
 
-The same records are appended to `runs/minigpt-125m/metrics.jsonl` for plotting and later comparison.
+The same records are appended to `runs/minigpt-255m/metrics.jsonl` for plotting and later comparison.
 
 ## Inference & Sampling Techniques
 
@@ -155,14 +187,14 @@ The same records are appended to `runs/minigpt-125m/metrics.jsonl` for plotting 
 Example:
 
 ```powershell
-python src/sample.py --checkpoint runs/minigpt-125m/latest.pt --prompt "The central idea is"
+python src/sample.py --checkpoint runs/minigpt-255m/latest.pt --prompt "The central idea is"
 ```
 
 The sampling loop remains intentionally explicit and currently recomputes the full forward pass without a KV cache, making autoregressive behavior easy to inspect.
 
 ## Results & Observations
 
-The refactored 125M bilingual model has not yet completed its full pretraining run. Final train/validation curves, bilingual evaluation, literary continuation samples, knowledge benchmarks, and FP-versus-QAT comparisons will be added after training. The historical loss figure above is not presented as a result for the new architecture.
+The refactored 254.5M bilingual model has not yet completed its full pretraining run. Final train/validation curves, bilingual evaluation, literary continuation samples, knowledge benchmarks, and FP-versus-QAT comparisons will be added after training. The historical loss figure above is not presented as a result for the new architecture.
 
 ### Tokenization
 
@@ -262,15 +294,15 @@ When the GPU is available, the complete default workflow is:
 python run.py
 ```
 
-This command verifies the model/data configuration, trains the tokenizer if needed, prepares or reuses the packed dataset, and starts the 125M model training loop. It refuses to start the full workload without CUDA unless `--allow-cpu` is deliberately supplied for a tiny smoke test.
+This command verifies the model/data configuration, trains the tokenizer if needed, prepares or reuses the packed dataset, and starts the 254.5M model training loop. It refuses to start the full workload without CUDA unless `--allow-cpu` is deliberately supplied for a tiny smoke test.
 
 ### Default Training Load
 
 | Setting | Value |
 |---|---:|
 | Sequence length | 512 |
-| Micro-batch size | 1 |
-| Gradient accumulation | 64 |
+| Micro-batch size | 2 |
+| Gradient accumulation | 32 |
 | Effective tokens per optimizer step | 32,768 |
 | Optimizer steps | 76,300 |
 | Remote token budget | approximately 2.5B |
@@ -280,8 +312,9 @@ This command verifies the model/data configuration, trains the tokenizer if need
 | Gradient clipping | 1.0 |
 | Validation interval | 250 steps |
 | Disk-checkpoint interval | 50,000 steps |
+| CUDA Graph policy | `auto` (fixed-shape inference; eager training fallback) |
 
-This is an aggressive but practical starting configuration for an 8GB laptop GPU: mixed precision, activation checkpointing, a 512-token context, micro-batch size 1, and gradient accumulation. If memory is still insufficient, reduce `sequence_length` before changing the model width, and increase accumulation if the effective token batch should remain similar.
+This is an aggressive but practical starting configuration for an 8GB laptop GPU: mixed precision, activation checkpointing, a 512-token context, micro-batch size 2, and gradient accumulation. The data loader uses pinned memory, two persistent workers, and a bounded prefetch queue. The loop also keeps loss reductions on-device until the log record is emitted, avoiding a host synchronization for every micro-batch. If memory is still insufficient, reduce `sequence_length` before changing the model width, and increase accumulation if the effective token batch should remain similar.
 
 Full attention is retained at 512/1,024 tokens. Sparse attention would add substantial complexity and can damage cross-paragraph literary relationships without providing a compelling benefit at this context length. Sliding-window/global-head or hybrid linear-attention experiments are better reserved for a future 4K-or-longer context extension.
 
@@ -290,13 +323,15 @@ Full attention is retained at 512/1,024 tokens. Sparse attention would add subst
 The training loop counts **optimizer steps**, not individual micro-batches. Every 50,000 optimizer steps it atomically updates:
 
 ```text
-runs/minigpt-125m/latest.pt
+runs/minigpt-255m/latest.pt
 ```
 
 The checkpoint contains model weights, optimizer state, learning-rate scheduler, mixed-precision scaler, completed step, and random-number-generator state. The final state is also saved when a normal run finishes, even if it does not end on a 50,000-step boundary.
 
+Pressing `Ctrl+C` now requests a graceful stop: the current optimizer step is completed and `latest.pt` is written before the process exits. A hard process kill or power loss can only resume from the last checkpoint already written. With the default 50,000-step interval, that can discard up to 49,999 completed optimizer steps. Resume restores AdamW moments, the scheduler position and learning rate, AMP scaler, model weights, and Python/NumPy/PyTorch/CUDA RNG states; it does not reset the learning rate or optimizer. Exact bit-for-bit replay of the data stream is not promised when `num_workers > 0`, because worker prefetch queues and their local RNG states are not serialized, but the learned state is resumed rather than restarted.
+
 ```powershell
-python run.py --resume runs/minigpt-125m/latest.pt
+python run.py --resume runs/minigpt-255m/latest.pt
 ```
 
 By default, `latest.pt` is replaced instead of accumulating large numbered files. Set `keep_checkpoint_history` to `true` only when permanent milestone snapshots are worth the additional storage.
@@ -306,19 +341,19 @@ By default, `latest.pt` is replaced instead of accumulating large numbered files
 Start the separate 2,000-step W8A8 QAT stage from a completed dense checkpoint:
 
 ```powershell
-python run.py --model-config configs/model_small_qat.json --train-config configs/train_qat.json --resume runs/minigpt-125m/latest.pt --weights-only
+python run.py --model-config configs/model_small_qat.json --train-config configs/train_qat.json --resume runs/minigpt-255m/latest.pt --weights-only
 ```
 
 Use `--weights-only` only for the first dense-to-QAT transition because the QAT stage intentionally starts with a fresh optimizer and learning-rate schedule. To resume an interrupted QAT run, restore the entire QAT checkpoint instead:
 
 ```powershell
-python run.py --model-config configs/model_small_qat.json --train-config configs/train_qat.json --resume runs/minigpt-125m-qat/latest.pt
+python run.py --model-config configs/model_small_qat.json --train-config configs/train_qat.json --resume runs/minigpt-255m-qat/latest.pt
 ```
 
 Export integer weights and per-group scales after QAT:
 
 ```powershell
-python src/export_quantized.py --checkpoint runs/minigpt-125m-qat/latest.pt --output runs/minigpt-125m-qat/quantized.pt
+python src/export_quantized.py --checkpoint runs/minigpt-255m-qat/latest.pt --output runs/minigpt-255m-qat/quantized.pt
 ```
 
 ## Project Structure
@@ -328,7 +363,7 @@ configs/
   data_sources.json              Bilingual 2.5B-token mixture plus local TXT books
   data_sources.local_books.json  Local-books-only audit manifest
   data_sources.example.json      Template for custom data sources
-  model_small.json               Default dense 125M GQA model
+  model_small.json               Default dense 254.5M GQA model
   model_small_qat.json           Shape-compatible W8A8 QAT model
   model_moe_experiment.json      Optional educational MoE experiment
   train.json                     Main pretraining configuration
@@ -336,6 +371,8 @@ configs/
 src/
   config.py                      Strict model and training configuration
   model.py                       GQA, RoPE, RMSNorm, SwiGLU, and optional MoE
+  cuda_graph.py                  Fixed-shape inference CUDA Graph helper
+  minivllm_bridge.py              On-demand loader for miniVLLM native kernels
   quantization.py                Fake quantization and straight-through estimator
   train_tokenizer.py             Balanced bilingual byte-level BPE training
   prepare_data.py                Cleaning, deduplication, group split, and packing

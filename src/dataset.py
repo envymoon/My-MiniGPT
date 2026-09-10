@@ -59,6 +59,10 @@ def get_dataloaders(
         "pin_memory": pin_memory,
         "persistent_workers": num_workers > 0,
     }
+    if num_workers > 0:
+        # Keep a small host-side queue ready without allowing workers to
+        # consume unbounded RAM when a large book is being streamed.
+        common["prefetch_factor"] = 2
     train_loader = DataLoader(train_dataset, shuffle=True, drop_last=True, **common)
     val_loader = DataLoader(val_dataset, shuffle=False, drop_last=False, **common)
     return train_loader, val_loader

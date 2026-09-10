@@ -45,7 +45,11 @@ def main() -> None:
             f"manifest tokenizer={manifest_tokenizer!r} but training tokenizer="
             f"{train_config.tokenizer_name!r}"
         )
-    model = GPT(model_config)
+    # The launcher only needs the parameter count here. Building the full model
+    # on CPU would initialize 255M parameters and then immediately discard them
+    # before train.py constructs the real CUDA model.
+    with torch.device("meta"):
+        model = GPT(model_config)
     print(
         f"model parameters={model.parameter_count():,} layers={model_config.n_layers} "
         f"GQA={model_config.n_heads}Q/{model_config.n_kv_heads}KV "
