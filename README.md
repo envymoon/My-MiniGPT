@@ -161,9 +161,9 @@ CUDA Graph policy is `auto` by default. For fixed-shape inference, [`src/cuda_gr
 
 ## 4 Training Dynamics
 
-Below is the existing training-versus-validation loss figure from the original project. It is intentionally retained as a historical result and should be replaced after the new 254.5M GQA model completes training.
+The following curve is generated from the current 254.5M GQA run (`runs/minigpt-255m/metrics.jsonl`). It covers optimizer steps 1 through 50,950; the historical 125M-era PNG is retained separately as `assets/loss_comparison_legacy.png`.
 
-![Training vs Validation Loss](assets/loss_comparison.png)
+![Current 254.5M Training vs Validation Loss](assets/loss_comparison.svg)
 
 The current training loop prints one JSON record per optimizer step, including:
 
@@ -202,7 +202,12 @@ The 254.5M-parameter model is approximately 1.02 GB in FP32 and 509 MB in FP16/B
 
 ## Results & Observations
 
-The refactored 254.5M bilingual model has not yet completed its full pretraining run. Final train/validation curves, bilingual evaluation, literary continuation samples, knowledge benchmarks, and FP-versus-QAT comparisons will be added after training. The historical loss figure above is not presented as a result for the new architecture.
+The current 254.5M bilingual run is a partial pretraining record through optimizer step 50,950. The latest logged training loss is **3.415**; the latest validation loss is **3.341** at step 50,750, with a best recorded validation loss of **3.335** at step 50,250. The run has seen approximately 1.67B effective token positions, reached a median post-warmup throughput of about 5,507 tokens/s, and used 4.93GB peak allocated VRAM.
+
+- [Current training summary](assets/training_summary_255m.json)
+- [Bilingual inference samples](assets/inference_samples_255m.md)
+
+These are qualitative and engineering measurements from the current checkpoint, not a claim that the full 76,300-step pretraining schedule has converged. Formal bilingual evaluation, contamination checks, and longer-run curves should be added before making benchmark or capability claims.
 
 ### Tokenization
 
@@ -218,7 +223,7 @@ python src/train_tokenizer.py --manifest configs/data_sources.json --output-dir 
 
 ## Data Sources
 
-The default remote-data budget is 2.5 billion tokens. Local curated books in `~/Downloads/books` are included in addition to that budget.
+The current manifest caps the remote mixture at approximately 2.7 billion tokens. Local curated books in `~/Downloads/books` are included in addition to that budget. The processed snapshot used by the current run contains 2.713B training tokens and 30.9M validation tokens after filtering and deduplication.
 
 | Source | Token budget | Purpose | Citation key |
 |---|---:|---|---|
@@ -226,13 +231,15 @@ The default remote-data budget is 2.5 billion tokens. Local curated books in `~/
 | [FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) | 550M | English educational and general knowledge | `lozhkov2024finewebedu` |
 | [FineMath](https://huggingface.co/datasets/HuggingFaceTB/finemath) | 200M | Mathematical exposition and reasoning | `benallal2025smollm2` |
 | [PG-19](https://huggingface.co/datasets/emozilla/pg19) | 600M | Long-form English books and literary language | `rae2019compressive` and `emozilla2024pg19` |
+| [Project Gutenberg Extended](https://huggingface.co/datasets/imperial-cpg/project-gutenberg-extended) | 200M | Additional public-domain English literature beyond PG-19 | Dataset card citation; verify each underlying work |
 | [Cosmopedia / OpenStax](https://huggingface.co/datasets/HuggingFaceTB/cosmopedia) | 150M | Limited synthetic textbook-style material | `benallal2024cosmopedia` |
 | [Dolmino / peS2o](https://huggingface.co/datasets/allenai/dolmino-mix-1124) | 150M | Open scientific papers across major disciplines | `soldaini2023pes2o` and `allenai2024dolmino` |
 | [Chinese FineWeb Edu V2.1](https://huggingface.co/datasets/opencsg/Fineweb-Edu-Chinese-V2.1) | 650M | High-scoring Chinese educational and general text | `yu2025opencsg` |
-| [Literature-zh](https://huggingface.co/datasets/Geralt-Targaryen/Literature-zh) | 150M | Simplified-Chinese modern long-form mixture | `zhang2025literaturezh` |
+| [Books-zh](https://huggingface.co/datasets/Geralt-Targaryen/Books-zh) | 150M | Simplified-Chinese modern books and long-form prose | Dataset card citation; audit underlying rights |
+| [Literature-zh](https://huggingface.co/datasets/Geralt-Targaryen/Literature-zh) | Disabled | Kept out of the active run because it mixes books, papers, legal documents, and patents | `zhang2025literaturezh` |
 | [Chinese Classical Corpus](https://huggingface.co/datasets/gujilab/chinese-classical-corpus) | 50M | Classical Chinese history and literature | `gujilab2025classical` |
 
-The capped remote mixture is approximately 66% English and 34% Chinese. The Chinese path is intended for Simplified Chinese. `Literature-zh` reports upstream Traditional-to-Simplified conversion, while local books are not converted automatically and must therefore be supplied as verified Simplified-Chinese editions.
+The active Chinese path is intended for Simplified Chinese. `Books-zh` reports simplified-Chinese conversion, while local books are not converted automatically and must therefore be supplied as verified Simplified-Chinese editions. `Literature-zh` remains documented for provenance but is disabled in the active manifest because its mixture is not primarily literary.
 
 Dataset-level licenses do not automatically override the rights attached to every underlying web document or local book. Provenance, license terms, and redistribution rights must be audited before publishing trained weights or redistributing processed data.
 
@@ -313,7 +320,7 @@ This command verifies the model/data configuration, trains the tokenizer if need
 | Gradient accumulation | 32 |
 | Effective tokens per optimizer step | 32,768 |
 | Optimizer steps | 76,300 |
-| Remote token budget | approximately 2.5B |
+| Remote token budget | approximately 2.7B |
 | Optimizer | [AdamW](https://arxiv.org/abs/1711.05101) |
 | Peak learning rate | 3e-4 |
 | Schedule | 2,000-step warmup plus cosine decay |
@@ -368,7 +375,7 @@ python src/export_quantized.py --checkpoint runs/minigpt-255m-qat/latest.pt --ou
 
 ```text
 configs/
-  data_sources.json              Bilingual 2.5B-token mixture plus local TXT books
+  data_sources.json              Bilingual 2.7B-token mixture plus local TXT books
   data_sources.local_books.json  Local-books-only audit manifest
   data_sources.example.json      Template for custom data sources
   model_small.json               Default dense 254.5M GQA model
@@ -387,7 +394,12 @@ src/
   dataset.py                     Memory-mapped packed-token dataset
   train.py                       Mixed-precision resumable training loop
   sample.py                      Autoregressive sampling
+  export_weights.py              Compact FP16 weights-only export
   export_quantized.py            Backend-independent quantized export
+assets/
+  loss_comparison.svg            Current 254.5M training and validation curve
+  training_summary_255m.json     Compact run, data, and metric snapshot
+  inference_samples_255m.md      English and Simplified-Chinese samples
 tests/                           Model, tokenizer, data, and training smoke tests
 run.py                           One-command preparation and training entry point
 ```

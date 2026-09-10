@@ -61,6 +61,18 @@
       "provenance": "https://huggingface.co/datasets/emozilla/pg19"
     },
     {
+      "name": "gutenberg_extended_english_literature",
+      "hf_dataset": "imperial-cpg/project-gutenberg-extended",
+      "split": "train",
+      "text_field": "text",
+      "group_field": "book_title",
+      "shuffle_buffer": 256,
+      "max_tokens": 200000000,
+      "license": "Apache-2.0 dataset; underlying works are identified as public-domain Gutenberg texts; verify jurisdiction before redistribution",
+      "provenance": "https://huggingface.co/datasets/imperial-cpg/project-gutenberg-extended",
+      "quality_notes": "Books added to Project Gutenberg after the PG19 cutoff; kept separate from the existing PG19 source"
+    },
+    {
       "name": "openstax_textbook_synthesis",
       "hf_dataset": "HuggingFaceTB/cosmopedia",
       "hf_config": "openstax",
@@ -97,6 +109,18 @@
       "license": "OpenCSG Community License; verify intended use and redistribution terms",
       "provenance": "https://huggingface.co/datasets/opencsg/Fineweb-Edu-Chinese-V2.1",
       "quality_notes": "Only score >= 0.8 is accepted; exact duplicate removal runs globally"
+    },
+    {
+      "name": "modern_simplified_chinese_books",
+      "hf_dataset": "Geralt-Targaryen/Books-zh",
+      "split": "train",
+      "text_field": "text",
+      "group_field": "title",
+      "shuffle_buffer": 256,
+      "max_tokens": 150000000,
+      "license": "Apache-2.0 dataset card; underlying books may retain original copyright and are for local research use only",
+      "provenance": "https://huggingface.co/datasets/Geralt-Targaryen/Books-zh",
+      "quality_notes": "6,000+ cleaned Chinese books, converted to simplified Chinese; exclude from redistribution and audit source rights before publication"
     },
     {
       "name": "modern_simplified_chinese_longform",

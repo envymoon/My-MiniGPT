@@ -1,0 +1,108 @@
+{
+  "run": {
+    "name": "minigpt-255m",
+    "status": "paused_after_checkpoint",
+    "optimizer_steps_completed": 50950,
+    "effective_tokens_per_optimizer_step": 32768,
+    "approximate_token_positions_seen": 1669529600,
+    "checkpoint_step": 50950,
+    "qat_enabled": false
+  },
+  "model": {
+    "parameter_count": 254450944,
+    "vocabulary_size": 50304,
+    "dimension": 1024,
+    "layers": 18,
+    "query_heads": 16,
+    "key_value_heads": 4,
+    "ffn_hidden_dimension": 2816,
+    "maximum_context_length": 1024,
+    "architecture": "decoder-only Transformer with GQA, RoPE, RMSNorm, QK-Norm, SwiGLU, and tied embeddings"
+  },
+  "metrics": {
+    "latest_train_loss": 3.415455,
+    "latest_validation_loss": 3.341301,
+    "latest_validation_step": 50750,
+    "best_validation_loss": 3.334691,
+    "best_validation_step": 50250,
+    "median_tokens_per_second_after_warmup": 5506.98,
+    "peak_allocated_vram_gb": 4.93
+  },
+  "data": {
+    "tokenizer": "tokenizers/minigpt-bilingual-50304",
+    "manifest_fingerprint": "1a3d6a234207d6b5c214e7da0487a8be40c1bdf9336b77453e65ca8b1ed4589b",
+    "train_tokens": 2713070738,
+    "validation_tokens": 30947374,
+    "documents_seen": 1300063,
+    "documents_kept": 1297596,
+    "exact_duplicates_removed": 2001,
+    "repeated_copies_removed": 14,
+    "sources": {
+      "local_curated_books": {
+        "train_tokens": 127346643,
+        "validation_tokens": 16891190,
+        "documents_kept": 136,
+        "duplicates": 0
+      },
+      "fineweb_edu_english": {
+        "train_tokens": 547392885,
+        "validation_tokens": 2607456,
+        "documents_kept": 514478,
+        "duplicates": 1101
+      },
+      "finemath_4plus": {
+        "train_tokens": 198917231,
+        "validation_tokens": 1083006,
+        "documents_kept": 135160,
+        "duplicates": 0
+      },
+      "pg19_english_literature": {
+        "train_tokens": 597287493,
+        "validation_tokens": 2781533,
+        "documents_kept": 5842,
+        "duplicates": 0
+      },
+      "gutenberg_extended_english_literature": {
+        "train_tokens": 199318317,
+        "validation_tokens": 775487,
+        "documents_kept": 2323,
+        "duplicates": 0
+      },
+      "openstax_textbook_synthesis": {
+        "train_tokens": 97858199,
+        "validation_tokens": 505409,
+        "documents_kept": 126332,
+        "duplicates": 0
+      },
+      "pes2o_open_science": {
+        "train_tokens": 149080646,
+        "validation_tokens": 920289,
+        "documents_kept": 56954,
+        "duplicates": 0
+      },
+      "chinese_fineweb_edu_high_score": {
+        "train_tokens": 646754430,
+        "validation_tokens": 3246305,
+        "documents_kept": 455813,
+        "duplicates": 900
+      },
+      "modern_simplified_chinese_books": {
+        "train_tokens": 148010312,
+        "validation_tokens": 2136699,
+        "documents_kept": 445,
+        "duplicates": 0
+      },
+      "chinese_classical_literature": {
+        "train_tokens": 1104582,
+        "validation_tokens": 0,
+        "documents_kept": 113,
+        "duplicates": 0
+      }
+    }
+  },
+  "notes": [
+    "This is a partial pretraining record through step 50,950, not a claim of completed convergence.",
+    "The source mixture includes user-provided local books and capped Hugging Face datasets; licenses and redistribution rights must be audited per work.",
+    "Raw books and packed token binaries are intentionally not included in the repository."
+  ]
+}
