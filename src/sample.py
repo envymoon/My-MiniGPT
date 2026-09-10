@@ -81,7 +81,18 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     state = torch.load(arguments.checkpoint, map_location=device, weights_only=False)
     model_config = from_dict(ModelConfig, state["model_config"])
-    model = GPT(model_config).to(device)
+    stored_dtype = state.get("dtype")
+    model_dtype = {
+        "fp16": torch.float16,
+        "bf16": torch.bfloat16,
+        "fp32": torch.float32,
+    }.get(stored_dtype)
+    # Keep CPU inference in fp32 for broad operator support. CUDA can retain
+    # the published storage dtype and therefore the smaller runtime footprint.
+    if device.type == "cuda" and model_dtype is not None:
+        model = GPT(model_config).to(device=device, dtype=model_dtype)
+    else:
+        model = GPT(model_config).to(device)
     model.load_state_dict(state["model"])
     set_qat_enabled(model, arguments.qat)
     model.eval()

@@ -6,8 +6,6 @@
   </a>
 </p>
 
-<p align="center"><strong>Click the badge above to interact with the model in the live demo.</strong></p>
-
 A ground-up PyTorch implementation focusing on attention mechanics, masking, normalization design choices, bilingual data preparation, and memory-aware language-model training.
 
 The current default is a **254,450,944-parameter (approximately 254.5M)** bilingual English-Simplified-Chinese model. Its primary training direction is **literary language ability in both English and Simplified Chinese**: long-form narrative, description, dialogue, style, and coherent continuation. Educational and general-knowledge data provide a foundation, while curated books and literary corpora remain central to the model's identity.
@@ -191,6 +189,16 @@ python src/sample.py --checkpoint runs/minigpt-255m/latest.pt --prompt "The cent
 ```
 
 The sampling loop remains intentionally explicit and currently recomputes the full forward pass without a KV cache, making autoregressive behavior easy to inspect.
+
+### Publishing a Weights-Only Artifact
+
+`runs/minigpt-255m/latest.pt` is a **training** checkpoint: it also contains AdamW moments, the learning-rate scheduler, AMP state, and random-number-generator state. Keep that file privately for reproducible resume, but do not publish it as the model artifact. Export a compact FP16 weights-only file instead:
+
+```powershell
+python src/export_weights.py --checkpoint runs/minigpt-255m/latest.pt --output runs/minigpt-255m/model_fp16.pt --dtype fp16
+```
+
+The 254.5M-parameter model is approximately 1.02 GB in FP32 and 509 MB in FP16/BF16, so the exported file fits common browser upload limits. The weights-only file retains the model configuration and tokenizer name but intentionally omits optimizer state.
 
 ## Results & Observations
 
