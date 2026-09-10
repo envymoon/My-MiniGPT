@@ -1,8 +1,28 @@
 # My-MiniGPT
 
+<p align="center">
+  <a href="https://huggingface.co/spaces/ianhaimo/GPT-A-Minimal-Interpretable-Implementation">
+    <img src="https://img.shields.io/badge/%F0%9F%A4%97%20Interactive%20Hugging%20Face%20Demo-TRY%20THE%20MODEL-2563eb?style=for-the-badge&logo=huggingface&logoColor=white" alt="Open the interactive Hugging Face demo" height="44">
+  </a>
+</p>
+
+<p align="center"><strong>Click the badge above to interact with the model in the live demo.</strong></p>
+
 A ground-up PyTorch implementation focusing on attention mechanics, masking, normalization design choices, bilingual data preparation, and memory-aware language-model training.
 
-[![App](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Demo-blue)](https://huggingface.co/spaces/ianhaimo/GPT-A-Minimal-Interpretable-Implementation)
+The current default is a **254,450,944-parameter (approximately 254.5M)** bilingual English-Simplified-Chinese model. Its primary training direction is **literary language ability in both English and Simplified Chinese**: long-form narrative, description, dialogue, style, and coherent continuation. Educational and general-knowledge data provide a foundation, while curated books and literary corpora remain central to the model's identity.
+
+## Primary Training Focus
+
+My-MiniGPT is designed first as a bilingual literary language model rather than an instruction-following assistant. Pretraining emphasizes:
+
+- English and Simplified-Chinese literary prose;
+- long-form narrative continuity, scene description, and dialogue;
+- exposure to both classic and modern literary styles;
+- balanced bilingual tokenization and data preparation;
+- transparent, ground-up PyTorch implementations that keep the model's behavior inspectable.
+
+The educational, mathematical, scientific, and general-text sources in the mixture support vocabulary and world knowledge, but the main qualitative target is literary generation in both languages.
 
 ## Project Motivation
 
